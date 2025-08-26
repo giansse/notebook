@@ -1,0 +1,110 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.widgets import Slider
+import matplotlib
+matplotlib.rcParams['font.family'] = ['Microsoft JhengHei']
+
+# 參數設定
+n = 5            # 球數
+L = 1.5          # 擺長 (公尺)，可調整
+ball_spacing = 0.3  # 球懸吊點間距 (公尺)，改小球會更靠近
+R = 0.05         # 球半徑 (公尺)，影響碰撞判斷
+
+g = 9.81         # 重力加速度
+
+dt = 0.01
+t_max = 20
+t = np.arange(0, t_max, dt)
+
+init_angle = 0.5
+init_ball = 0
+
+def handle_collisions(theta, omega):
+    x0 = np.linspace(- (n-1)*ball_spacing/2, (n-1)*ball_spacing/2, n)
+    x = x0 + L * np.sin(theta)
+    v = L * omega * np.cos(theta)
+    for i in range(n-1):
+        dist = x[i+1] - x[i]
+        rel_v = v[i+1] - v[i]
+        if dist <= 2*R and rel_v < 0:
+            v[i], v[i+1] = v[i+1], v[i]
+            cos_i = np.cos(theta[i])
+            cos_j = np.cos(theta[i+1])
+            omega[i] = v[i] / (L * cos_i) if abs(cos_i) > 1e-4 else omega[i]
+            omega[i+1] = v[i+1] / (L * cos_j) if abs(cos_j) > 1e-4 else omega[i+1]
+    return omega
+
+def simulate(theta0, omega0):
+    thetas = np.zeros((len(t), n))
+    omegas = np.zeros((len(t), n))
+    thetas[0] = theta0
+    omegas[0] = omega0
+    for i in range(1, len(t)):
+        domega = - (g / L) * np.sin(thetas[i-1])
+        omegas[i] = omegas[i-1] + domega * dt
+        thetas[i] = thetas[i-1] + omegas[i] * dt
+        omegas[i] = handle_collisions(thetas[i], omegas[i])
+    return thetas, omegas
+
+theta0 = np.zeros(n)
+theta0[init_ball] = init_angle
+omega0 = np.zeros(n)
+
+thetas, omegas = simulate(theta0, omega0)
+
+fig, ax = plt.subplots(figsize=(7,5))
+plt.subplots_adjust(left=0.1, bottom=0.25)
+ax.set_xlim(- (n-1)*ball_spacing/2 - 0.5, (n-1)*ball_spacing/2 + 0.5)
+ax.set_ylim(-L - 0.3, 0.3)
+ax.set_aspect('equal')
+ax.axis('off')
+
+lines = []
+balls = []
+for i in range(n):
+    line, = ax.plot([], [], 'k-', lw=2)
+    ball, = ax.plot([], [], 'o', markersize=16)
+    lines.append(line)
+    balls.append(ball)
+
+ax_angle = plt.axes([0.15, 0.12, 0.7, 0.03])
+slider_angle = Slider(ax_angle, '角度 (度)', -90, 90, valinit=np.degrees(init_angle))
+
+ax_ball = plt.axes([0.15, 0.06, 0.7, 0.03])
+slider_ball = Slider(ax_ball, '第幾顆', 1, n, valinit=init_ball+1, valstep=1)
+
+def init():
+    for line, ball in zip(lines, balls):
+        line.set_data([], [])
+        ball.set_data([], [])
+    return lines + balls
+
+def animate(frame):
+    x0 = np.linspace(- (n-1)*ball_spacing/2, (n-1)*ball_spacing/2, n)
+    y0 = np.zeros(n)
+    x1 = x0 + L * np.sin(thetas[frame])
+    y1 = y0 - L * np.cos(thetas[frame])
+    for i in range(n):
+        lines[i].set_data([x0[i], x1[i]], [y0[i], y1[i]])
+        balls[i].set_data([x1[i]], [y1[i]])
+    return lines + balls
+
+def update(val):
+    angle = np.radians(slider_angle.val)
+    ball_idx = int(slider_ball.val) - 1
+    theta0 = np.zeros(n)
+    theta0[ball_idx] = angle
+    global thetas, omegas, ani
+    thetas, omegas = simulate(theta0, np.zeros(n))
+    ani.event_source.stop()
+    ani.frame_seq = ani.new_frame_seq()
+    ani.event_source.start()
+
+slider_angle.on_changed(update)
+slider_ball.on_changed(update)
+
+ani = animation.FuncAnimation(fig, animate, frames=len(t),
+                              init_func=init, blit=True, interval=10, repeat=True)
+
+plt.show()
